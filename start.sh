@@ -1,23 +1,29 @@
 #!/bin/sh
 set -e
 
-# 1. 启动底层代理内核（如 sing-box，监听本地回环端口，假设端口为 8080）
-PORT=${PORT:-8080}
-UUID=${UUID:-$(cat /proc/sys/kernel/random/uuid)}
-
-# 启动 sing-box 放在后台运行
-sing-box run -c /etc/sing-box/config.json > /dev/null 2>&1 &
-
-echo "========================================="
-echo "sing-box 已在后台启动，监听端口: ${PORT}"
 
 # 2. 判断是否传入了 ARGO_TOKEN
 if [ -n "${ARGO_TOKEN}" ]; then
-    echo "检测到 ARGO_TOKEN，正在使用固定 Named Tunnel 启动..."
-    exec cloudflared tunnel run --token "${ARGO_TOKEN}"
+    # 替换配置文件中的 UUID
+    sed -i "s/PASTE_YOUR_UUID_HERE/$UUID/g" config.json
+    
+    # 后台运行 sing-box
+    sing-box run -c config.json &
+    
+    # 运行 Cloudflare Tunnel
+    cloudflared tunnel --no-autoupdate run --token $ARGO_TOKEN
 else
     echo "未提供 ARGO_TOKEN，正在创建 Cloudflare 临时隧道 (Quick Tunnel)..."
+    # 1. 启动底层代理内核（如 sing-box，监听本地回环端口，假设端口为 8080）
+    PORT=${PORT:-8080}
+    UUID=${UUID:-$(cat /proc/sys/kernel/random/uuid)}
     
+    # 启动 sing-box 放在后台运行
+    sing-box run -c /etc/sing-box/config.json > /dev/null 2>&1 &
+    
+    echo "========================================="
+    echo "sing-box 已在后台启动，监听端口: ${PORT}"
+
     # 创建临时日志文件用于提取 trycloudflare 域名
     ARGO_LOG="/tmp/cloudflared.log"
     touch "${ARGO_LOG}"
